@@ -1,4 +1,4 @@
-﻿Imports System.IO
+Imports System.IO
 Imports System.Net
 Imports System.Net.Sockets
 Imports System.Text
@@ -38,12 +38,12 @@ Public Class Rtltcp
             socket.Connect(Host, Port)
             If (socket.Connected) Then
                 Using stream As NetworkStream = socket.GetStream
-                    SendCommand(stream, &H1, Me.Frequency)
-                    SendCommand(stream, &H2, Me.Samplerate)
-                    SendCommand(stream, &H3, 1)
-                    SendCommand(stream, &H4, Me.Gain)
+                    Me.Send(stream, &H1, Me.Frequency)
+                    Me.Send(stream, &H2, Me.Samplerate)
+                    Me.Send(stream, &H3, 1)
+                    Me.Send(stream, &H4, Me.Gain)
                     result = True
-                    Dim data As List(Of Double()) = Me.Separate(Me.Collect(stream))
+                    Dim data As List(Of Double()) = Me.Planar(Me.Collect(stream))
                     socket.Close()
                     RaiseEvent OnData(data.First, data.Last)
                 End Using
@@ -52,24 +52,23 @@ Public Class Rtltcp
         RaiseEvent Finished(result)
     End Sub
 
-    Private Function Collect(rtltcp As Stream, Optional length As Integer = 4096) As List(Of Double)
+    Private Function Collect(rtltcp As Stream, Optional chunks As Integer = 4096) As List(Of Double)
         Dim result As New List(Of Double)
         Dim bytes As Integer
-        Dim buffer(length - 1) As Byte
+        Dim buffer(chunks - 1) As Byte
         Dim timer As New Stopwatch
         timer.Start()
         Do
-            bytes = rtltcp.Read(buffer, 0, length)
+            bytes = rtltcp.Read(buffer, 0, chunks)
             For i As Integer = 0 To bytes - 1 Step 2
                 result.Add(BitConverter.ToInt16(buffer, i))
             Next
             RaiseEvent OnRead(bytes)
-            If (timer.ElapsedMilliseconds > Me.Duration) Then Exit Do
-        Loop While bytes > 0
+        Loop While bytes > 0 And timer.ElapsedMilliseconds < Me.Duration
         Return result
     End Function
 
-    Private Function Separate(data As List(Of Double)) As List(Of Double())
+    Private Function Planar(data As List(Of Double)) As List(Of Double())
         Dim result As New List(Of Double())
         Dim index As Integer = data.Count \ 2
         Dim I As Double() = New Double(index - 1) {}
@@ -83,7 +82,7 @@ Public Class Rtltcp
         Return result
     End Function
 
-    Private Function SendCommand(stream As Stream, opcode As Byte, value As UInt32) As Boolean
+    Private Function Send(stream As Stream, opcode As Byte, value As UInt32) As Boolean
         If (stream.CanWrite) Then
             Dim cmdBytes As Byte() = {opcode, CByte((value >> 24) And &HFF),
                                               CByte((value >> 16) And &HFF),
